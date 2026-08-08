@@ -1,0 +1,206 @@
+/**
+ * LabStore backend — Google Apps Script bound to your Google Sheet.
+ *
+ * SHEET STRUCTURE EXPECTED:
+ *
+ * Tab "Products": Department | Brand | Category | ProductName | CatalogNumber | Price | ImageURL
+ *   - Category can be left blank (product sits directly under the Brand)
+ *   - Brand can be left blank if a Department has no brand level
+ *
+ * Tab "Users": Username | Password | ClientName | DiscountPercent
+ *
+ * Tab "Orders" (created automatically if missing): log of every submitted order line
+ *
+ * SETUP:
+ * 1. Open your Google Sheet → Extensions → Apps Script
+ * 2. Delete any starter code, paste this whole file in
+ * 3. Update EMAIL_TO / EMAIL_CC below
+ * 4. Click Deploy → New deployment → type: Web app
+ *      - Execute as: Me
+ *      - Who has access: Anyone
+ * 5. Copy the deployment URL — paste it into APPS_SCRIPT_URL in the web app's app.js
+ */
+
+const PRODUCTS_SHEET = "Products";
+const USERS_SHEET = "Users";
+const ORDERS_SHEET = "Orders";
+
+// Only this address receives order emails for now.
+// Add more addresses to EMAIL_CC once you've confirmed test orders look right.
+const EMAIL_TO = "h.yousef@medvision-kw.com";
+const EMAIL_CC = []; // e.g. ["someone@medvision-kw.com"]
+
+function doGet(e) {
+  try {
+    const action = e.parameter.action || "products";
+    if (action === "products") {
+      return jsonOut({ success: true, products: getProducts() });
+    }
+    return jsonOut({ success: false, error: "Unknown action" });
+  } catch (err) {
+    return jsonOut({ success: false, error: String(err) });
+  }
+}
+
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+    if (body.action === "login") {
+      return jsonOut(handleLogin(body.username, body.password));
+    }
+    if (body.action === "submitOrder") {
+      return jsonOut(handleSubmitOrder(body));
+    }
+    return jsonOut({ success: false, error: "Unknown action" });
+  } catch (err) {
+    return jsonOut({ success: false, error: String(err) });
+  }
+}
+
+function jsonOut(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getSheet(name) {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+}
+
+function getProducts() {
+  const sheet = getSheet(PRODUCTS_SHEET);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const rows = data.slice(1).filter(r => r[headers.indexOf("ProductName")]);
+  return rows.map(r => {
+    const obj = {};
+    headers.forEach((h, i) => (obj[h] = r[i]));
+    return obj;
+  });
+}
+
+function getUsers() {
+  const sheet = getSheet(USERS_SHEET);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  return data.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, i) => (obj[h] = r[i]));
+    return obj;
+  });
+}
+
+function handleLogin(username, password) {
+  const users = getUsers();
+  const match = users.find(
+    u => String(u.Username).trim() === String(username).trim() &&
+         String(u.Password) === String(password)
+  );
+  if (!match) {
+    return { success: false, error: "Incorrect username or password." };
+  }
+  return {
+    success: true,
+    clientName: match.ClientName,
+    discount: Number(match.DiscountPercent) || 0
+  };
+}
+
+/**
+ * Order submission: re-validates the user and re-computes every price
+ * from the sheet itself, rather than trusting numbers sent from the app.
+ * body = { username, password, items: [{ catalogNumber, qty }] }
+ */
+function handleSubmitOrder(body) {
+  const login = handleLogin(body.username, body.password);
+  if (!login.success) return login;
+
+  const products = getProducts();
+  const byCatalog = {};
+  products.forEach(p => (byCatalog[String(p.CatalogNumber).trim()] = p));
+
+  const lines = [];
+  let grandTotal = 0;
+
+  (body.items || []).forEach(item => {
+    const p = byCatalog[String(item.catalogNumber).trim()];
+    if (!p || !item.qty || item.qty <= 0) return;
+    const unitPrice = Number(p.Price) * (1 - login.discount / 100);
+    const lineTotal = unitPrice * item.qty;
+    grandTotal += lineTotal;
+    lines.push({
+      productName: p.ProductName,
+      catalogNumber: p.CatalogNumber,
+      qty: item.qty,
+      unitPrice: unitPrice,
+      lineTotal: lineTotal
+    });
+  });
+
+  if (lines.length === 0) {
+    return { success: false, error: "Order has no valid items." };
+  }
+
+  logOrder(login.clientName, body.username, lines, grandTotal);
+  sendOrderEmail(login.clientName, lines, grandTotal);
+
+  return { success: true, grandTotal: grandTotal };
+}
+
+function logOrder(clientName, username, lines, grandTotal) {
+  let sheet = getSheet(ORDERS_SHEET);
+  if (!sheet) {
+    sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(ORDERS_SHEET);
+    sheet.appendRow([
+      "Timestamp", "Username", "ClientName", "ProductName",
+      "CatalogNumber", "Qty", "UnitPrice", "LineTotal", "OrderTotal"
+    ]);
+  }
+  const timestamp = new Date();
+  lines.forEach(l => {
+    sheet.appendRow([
+      timestamp, username, clientName, l.productName,
+      l.catalogNumber, l.qty, l.unitPrice.toFixed(2),
+      l.lineTotal.toFixed(2), grandTotal.toFixed(2)
+    ]);
+  });
+}
+
+function sendOrderEmail(clientName, lines, grandTotal) {
+  const rowsHtml = lines.map(l => `
+    <tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;">${l.productName}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;">${l.catalogNumber}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;text-align:center;">${l.qty}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;text-align:right;">${l.unitPrice.toFixed(2)} KWD</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;text-align:right;">${l.lineTotal.toFixed(2)} KWD</td>
+    </tr>`).join("");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:640px;">
+      <h2 style="margin-bottom:2px;">New Order — ${clientName}</h2>
+      <p style="color:#666;margin-top:0;">Submitted ${new Date().toLocaleString()}</p>
+      <table style="border-collapse:collapse;width:100%;font-size:14px;">
+        <thead>
+          <tr style="background:#f2f2f2;text-align:left;">
+            <th style="padding:6px 10px;">Product</th>
+            <th style="padding:6px 10px;">Catalog #</th>
+            <th style="padding:6px 10px;text-align:center;">Qty</th>
+            <th style="padding:6px 10px;text-align:right;">Unit Price</th>
+            <th style="padding:6px 10px;text-align:right;">Line Total</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      <p style="font-size:16px;margin-top:14px;"><strong>Grand Total: ${grandTotal.toFixed(2)} KWD</strong></p>
+    </div>`;
+
+  const options = { htmlBody: html };
+  if (EMAIL_CC.length) options.cc = EMAIL_CC.join(",");
+
+  MailApp.sendEmail({
+    to: EMAIL_TO,
+    subject: `New LabStore Order — ${clientName}`,
+    htmlBody: html,
+    cc: options.cc
+  });
+}
