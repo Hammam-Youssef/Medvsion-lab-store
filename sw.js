@@ -1,4 +1,4 @@
-const CACHE = "labstore-v1";
+const CACHE = "labstore-v2";
 const SHELL = ["./index.html", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -16,7 +16,15 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   // Never cache API calls to Apps Script — always go to network for live data.
   if (e.request.url.includes("script.google.com")) return;
+  // Network-first for our own files, so updates show up immediately.
+  // Falls back to the cached copy only if the network request fails (offline).
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    fetch(e.request)
+      .then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
