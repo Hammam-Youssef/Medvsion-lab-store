@@ -1,6 +1,6 @@
 // ====== CONFIG ======
 // Paste your Google Apps Script Web App deployment URL here (ends in /exec)
-const APPS_SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxp9fBnMDYgOF0wjG_Zzeh1U2bsP6rGolO0--IpcP_JQU4x3_IqoSvmSt-J2XbugRdc/exec";
 
 // ====== ICONS (inline SVG, no external deps) ======
 const ICON_FLASK = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2H15" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><path d="M10 2V8.5L4.5 18C3.8 19.3 4.7 21 6.2 21H17.8C19.3 21 20.2 19.3 19.5 18L14 8.5V2" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M7.5 15H16.5" stroke="#D9A441" stroke-width="1.8"/></svg>`;
