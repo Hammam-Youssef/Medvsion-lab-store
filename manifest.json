@@ -1,6 +1,6 @@
 {
-  "name": "LabStore",
-  "short_name": "LabStore",
+  "name": "Medvision Lab Store",
+  "short_name": "Medvision",
   "description": "Client ordering portal for lab equipment and consumables",
   "start_url": "./index.html",
   "display": "standalone",

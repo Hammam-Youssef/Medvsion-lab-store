@@ -1,10 +1,14 @@
 // ====== CONFIG ======
 // Paste your Google Apps Script Web App deployment URL here (ends in /exec)
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxp9fBnMDYgOF0wjG_Zzeh1U2bsP6rGolO0--IpcP_JQU4x3_IqoSvmSt-J2XbugRdc/exec";
+const APPS_SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 // ====== ICONS (inline SVG, no external deps) ======
 const ICON_FLASK = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2H15" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><path d="M10 2V8.5L4.5 18C3.8 19.3 4.7 21 6.2 21H17.8C19.3 21 20.2 19.3 19.5 18L14 8.5V2" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M7.5 15H16.5" stroke="#D9A441" stroke-width="1.8"/></svg>`;
 const ICON_CART = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="18" height="18"><path d="M3 4H5L6.5 15.5C6.6 16.3 7.3 17 8.2 17H17.5C18.4 17 19.1 16.4 19.3 15.5L21 7H6" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="20" r="1.4" fill="#fff"/><circle cx="17" cy="20" r="1.4" fill="#fff"/></svg>`;
+
+// Tries to show logo.png (upload your own file with this name next to index.html).
+// Falls back to the flask icon automatically if logo.png isn't there yet.
+const BRAND_MARK = `<img src="logo.png" alt="Medvision" onerror="this.outerHTML='${ICON_FLASK.replace(/'/g, "\\'")}'" />`;
 
 // ====== STATE ======
 let session = JSON.parse(localStorage.getItem("labstore_session") || "null");
@@ -97,8 +101,8 @@ function renderLogin() {
   root.innerHTML = `
     <div class="login-wrap">
       <div class="login-card">
-        <div class="login-flask">${ICON_FLASK}</div>
-        <p class="login-title">LabStore</p>
+        <div class="login-flask">${BRAND_MARK}</div>
+        <p class="login-title">Medvision Lab Store</p>
         <p class="login-sub">Sign in with your client account</p>
       </div>
       <div class="login-form">
@@ -160,8 +164,8 @@ function renderBrowse() {
 
   let html = `
     <div class="topbar">
-      <div class="brand-mark">${ICON_FLASK}</div>
-      <p class="brand-name">LabStore</p>
+      <div class="brand-mark">${BRAND_MARK}</div>
+      <p class="brand-name">Medvision Lab Store</p>
       <div class="topbar-spacer"></div>
       <button class="btn-ghost" id="logoutBtn">Sign out</button>
     </div>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>LabStore — Client Ordering Portal</title>
+<title>Medvision Lab Store — Client Ordering Portal</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#0F5257" />
 <link rel="apple-touch-icon" href="icon-192.png" />
@@ -64,10 +64,11 @@
     width:34px;height:34px;border-radius:10px;
     background:linear-gradient(135deg, var(--cerulean), var(--blue-700));
     display:flex;align-items:center;justify-content:center;
-    flex-shrink:0;
+    flex-shrink:0;overflow:hidden;
     box-shadow:0 4px 14px rgba(0,174,239,0.35);
   }
   .brand-mark svg{width:18px;height:18px;}
+  .brand-mark img{width:100%;height:100%;object-fit:cover;}
   .brand-name{font-family:var(--font-display);font-weight:700;font-size:19px;letter-spacing:-0.02em;color:#fff;}
   .topbar-spacer{flex:1;}
 
@@ -114,9 +115,11 @@
     width:60px;height:60px;border-radius:18px;
     background:linear-gradient(135deg, var(--cerulean), var(--blue-700));
     display:flex;align-items:center;justify-content:center;margin:0 auto 16px;
+    overflow:hidden;
     box-shadow:0 10px 28px rgba(0,174,239,0.35);
   }
   .login-flask svg{width:30px;height:30px;}
+  .login-flask img{width:100%;height:100%;object-fit:cover;}
   .login-title{font-family:var(--font-display);font-weight:700;font-size:26px;margin:0 0 4px;letter-spacing:-0.02em;color:#fff;}
   .login-sub{color:var(--text-muted);font-size:14px;margin:0;}
   .login-form{display:flex;flex-direction:column;gap:10px;margin-top:22px;}
