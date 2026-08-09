@@ -51,6 +51,9 @@ function doPost(e) {
     if (body.action === "submitOrder") {
       return jsonOut(handleSubmitOrder(body));
     }
+    if (body.action === "adminStats") {
+      return jsonOut(handleAdminStats(body.username, body.password));
+    }
     return jsonOut({ success: false, error: "Unknown action" });
   } catch (err) {
     return jsonOut({ success: false, error: String(err) });
@@ -98,10 +101,13 @@ function handleLogin(username, password) {
   if (!match) {
     return { success: false, error: "Incorrect username or password." };
   }
+  const isAdmin = String(match.Role || "").trim().toLowerCase() === "admin" ||
+                  String(match.Username).trim().toLowerCase() === "labadmin";
   return {
     success: true,
     clientName: match.ClientName,
-    discount: Number(match.DiscountPercent) || 0
+    discount: Number(match.DiscountPercent) || 0,
+    isAdmin: isAdmin
   };
 }
 
@@ -163,6 +169,51 @@ function logOrder(clientName, username, lines, grandTotal) {
       l.lineTotal.toFixed(2), grandTotal.toFixed(2)
     ]);
   });
+}
+
+/**
+ * Admin-only: aggregates the Orders sheet into monthly totals and
+ * per-customer-per-month totals. Requires the logging-in user to be an admin.
+ */
+function handleAdminStats(username, password) {
+  const login = handleLogin(username, password);
+  if (!login.success) return login;
+  if (!login.isAdmin) return { success: false, error: "Not authorized." };
+
+  const sheet = getSheet(ORDERS_SHEET);
+  if (!sheet) return { success: true, monthly: [], byCustomer: [] };
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const rows = data.slice(1);
+  const idx = name => headers.indexOf(name);
+
+  const monthlyMap = {}; // "YYYY-MM" -> total
+  const customerMap = {}; // "ClientName||YYYY-MM" -> total
+
+  rows.forEach(r => {
+    const ts = r[idx("Timestamp")];
+    if (!ts) return;
+    const d = new Date(ts);
+    const month = Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM");
+    const clientName = r[idx("ClientName")];
+    const lineTotal = Number(r[idx("LineTotal")]) || 0;
+
+    monthlyMap[month] = (monthlyMap[month] || 0) + lineTotal;
+    const key = clientName + "||" + month;
+    customerMap[key] = (customerMap[key] || 0) + lineTotal;
+  });
+
+  const monthly = Object.keys(monthlyMap).sort().reverse().map(month => ({
+    month: month, total: Number(monthlyMap[month].toFixed(2))
+  }));
+
+  const byCustomer = Object.keys(customerMap).sort().reverse().map(key => {
+    const [clientName, month] = key.split("||");
+    return { clientName: clientName, month: month, total: Number(customerMap[key].toFixed(2)) };
+  });
+
+  return { success: true, monthly: monthly, byCustomer: byCustomer };
 }
 
 function sendOrderEmail(clientName, lines, grandTotal) {

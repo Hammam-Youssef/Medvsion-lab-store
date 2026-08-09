@@ -320,6 +320,7 @@ async function submitOrder(lines) {
     cart = {};
     btn.textContent = "Submitted";
   } catch (err) {
+    console.error("Submit order failed:", err.message || err);
     status.textContent = "Could not submit order. Please try again.";
     status.className = "status-msg error";
     status.style.display = "block";
