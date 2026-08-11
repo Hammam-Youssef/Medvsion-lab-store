@@ -14,6 +14,8 @@ self.addEventListener("activate", e => {
 });
 
 self.addEventListener("fetch", e => {
+  // Only handle plain http(s) requests — skip chrome-extension:// and other schemes.
+  if (!e.request.url.startsWith("http")) return;
   // Never cache API calls to Apps Script — always go to network for live data.
   if (e.request.url.includes("script.google.com")) return;
   // Network-first for our own files, so updates show up immediately.
