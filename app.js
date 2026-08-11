@@ -208,9 +208,16 @@ function renderBrowse() {
     level.items.forEach(p => {
       const discounted = Number(p.Price) * (1 - session.discount / 100);
       const qty = cart[p.CatalogNumber] || 0;
+      const hasStockInfo = p.Stock !== undefined && p.Stock !== "" && !isNaN(Number(p.Stock));
+      const stock = hasStockInfo ? Number(p.Stock) : null;
+      const outOfStock = stock !== null && stock <= 0;
+      const atStockLimit = stock !== null && qty >= stock;
       html += `
-        <div class="product-card">
-          <img src="${p.ImageURL || ''}" alt="${p.ProductName}" onerror="this.style.opacity=0" />
+        <div class="product-card ${outOfStock ? 'out-of-stock' : ''}">
+          <div class="img-wrap">
+            <img src="${p.ImageURL || ''}" alt="${p.ProductName}" data-zoom="${(p.ImageURL || '').replace(/"/g, '&quot;')}" data-zoom-name="${String(p.ProductName).replace(/"/g, '&quot;')}" onerror="this.style.opacity=0" />
+            ${outOfStock ? `<span class="stock-badge">Out of stock</span>` : ''}
+          </div>
           <div class="product-body">
             <p class="product-name">${p.ProductName}</p>
             <span class="catalog-chip">${p.CatalogNumber}</span>
@@ -218,11 +225,16 @@ function renderBrowse() {
               <span class="price-strike">${Number(p.Price).toFixed(2)}</span>
               <span class="price-final">${discounted.toFixed(2)} KWD</span>
             </div>
+            ${outOfStock ? `
+            <div class="qty-row"><span class="stock-note">Unavailable</span></div>
+            ` : `
             <div class="qty-row">
               <button class="btn-round" data-dec="${p.CatalogNumber}">−</button>
               <span class="qty-val">${qty}</span>
-              <button class="btn-round filled" data-inc="${p.CatalogNumber}">+</button>
+              <button class="btn-round filled" data-inc="${p.CatalogNumber}" data-stock="${stock === null ? '' : stock}" ${atStockLimit ? 'disabled' : ''}>+</button>
             </div>
+            ${stock !== null && stock <= 5 ? `<p class="stock-note">${stock} left</p>` : ''}
+            `}
           </div>
         </div>`;
     });
@@ -248,7 +260,19 @@ function renderBrowse() {
   if (clearBtn) clearBtn.onclick = () => { searchQuery = ""; render(); };
   root.querySelectorAll("[data-crumb]").forEach(el => el.onclick = () => { path = path.slice(0, Number(el.dataset.crumb)); render(); });
   root.querySelectorAll("[data-nav]").forEach(el => el.onclick = () => { path.push(el.dataset.nav); render(); });
-  root.querySelectorAll("[data-inc]").forEach(el => el.onclick = () => { cart[el.dataset.inc] = (cart[el.dataset.inc] || 0) + 1; render(); });
+  root.querySelectorAll("img[data-zoom]").forEach(img => {
+    if (!img.dataset.zoom) return;
+    img.style.cursor = "zoom-in";
+    img.onclick = () => openImageModal(img.dataset.zoom, img.dataset.zoomName);
+  });
+  root.querySelectorAll("[data-inc]").forEach(el => el.onclick = () => {
+    const stockAttr = el.dataset.stock;
+    const stockLimit = stockAttr === "" ? null : Number(stockAttr);
+    const current = cart[el.dataset.inc] || 0;
+    if (stockLimit !== null && current >= stockLimit) return;
+    cart[el.dataset.inc] = current + 1;
+    render();
+  });
   root.querySelectorAll("[data-dec]").forEach(el => el.onclick = () => { cart[el.dataset.dec] = Math.max(0, (cart[el.dataset.dec] || 0) - 1); render(); });
   const fab = document.getElementById("cartFab");
   if (fab) fab.onclick = () => { view = "summary"; render(); };
@@ -327,6 +351,24 @@ async function submitOrder(lines) {
     status.style.display = "block";
     btn.disabled = false; btn.textContent = "Submit order";
   }
+}
+
+// ====== IMAGE LIGHTBOX ======
+function openImageModal(url, name) {
+  if (!url) return;
+  const existing = document.getElementById("imgModal");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "imgModal";
+  overlay.className = "img-modal-overlay";
+  overlay.innerHTML = `
+    <button class="img-modal-close" aria-label="Close">✕</button>
+    <img src="${url}" alt="${(name || '').replace(/"/g, '&quot;')}" class="img-modal-img" />
+  `;
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  overlay.querySelector(".img-modal-close").onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
 }
 
 // ====== ADMIN DASHBOARD ======
