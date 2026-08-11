@@ -227,7 +227,7 @@ function renderBrowse() {
             <p class="product-name">${p.ProductName}</p>
             <span class="catalog-chip">${p.CatalogNumber}</span>
             <div class="price-row">
-              <span class="price-strike">${Number(p.Price).toFixed(2)}</span>
+              ${p.HasCustomPrice ? '' : `<span class="price-strike">${Number(p.Price).toFixed(2)}</span>`}
               <span class="price-final">${discounted.toFixed(2)} KWD</span>
             </div>
             ${outOfStock ? `
