@@ -44,13 +44,21 @@ async function boot() {
     render();
     return;
   }
-  try {
-    const res = await apiGet("products");
-    if (!res.success) throw new Error(res.error || "Failed to load products");
-    products = res.products;
-    view = session ? "browse" : "login";
-  } catch (err) {
-    loadError = "Could not reach the store. Check your connection and try again.";
+  if (session) {
+    // Re-validate the cached session and refresh pricing (discount/custom pricing may have changed).
+    try {
+      const res = await apiPost({ action: "login", username: session.username, password: session.password });
+      if (!res.success) throw new Error(res.error || "Session expired");
+      session = { username: session.username, password: session.password, clientName: res.clientName, discount: res.discount, isAdmin: !!res.isAdmin };
+      localStorage.setItem("labstore_session", JSON.stringify(session));
+      products = res.products || [];
+      view = "browse";
+    } catch (err) {
+      session = null;
+      localStorage.removeItem("labstore_session");
+      view = "login";
+    }
+  } else {
     view = "login";
   }
   render();
@@ -93,7 +101,7 @@ function cartTotal() {
   return Object.entries(cart).reduce((sum, [cat, qty]) => {
     const p = products.find(pr => String(pr.CatalogNumber) === cat);
     if (!p || qty <= 0) return sum;
-    return sum + Number(p.Price) * (1 - session.discount / 100) * qty;
+    return sum + Number(p.EffectivePrice) * qty;
   }, 0);
 }
 
@@ -151,10 +159,7 @@ async function doLogin() {
     }
     session = { username, password, clientName: res.clientName, discount: res.discount, isAdmin: !!res.isAdmin };
     localStorage.setItem("labstore_session", JSON.stringify(session));
-    if (!products.length) {
-      const p = await apiGet("products");
-      products = p.products || [];
-    }
+    products = res.products || [];
     view = "browse";
     render();
   } catch (err) {
@@ -206,7 +211,7 @@ function renderBrowse() {
   } else {
     html += `<div class="product-grid">`;
     level.items.forEach(p => {
-      const discounted = Number(p.Price) * (1 - session.discount / 100);
+      const discounted = Number(p.EffectivePrice);
       const qty = cart[p.CatalogNumber] || 0;
       const hasStockInfo = p.Stock !== undefined && p.Stock !== "" && !isNaN(Number(p.Stock));
       const stock = hasStockInfo ? Number(p.Stock) : null;
@@ -283,7 +288,7 @@ function renderSummary() {
     .filter(([, qty]) => qty > 0)
     .map(([catalogNumber, qty]) => {
       const p = products.find(pr => String(pr.CatalogNumber) === catalogNumber);
-      const unitPrice = Number(p.Price) * (1 - session.discount / 100);
+      const unitPrice = Number(p.EffectivePrice);
       return { ...p, qty, unitPrice, lineTotal: unitPrice * qty };
     });
   const grand = lines.reduce((s, l) => s + l.lineTotal, 0);
