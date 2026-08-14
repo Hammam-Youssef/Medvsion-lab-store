@@ -15,7 +15,7 @@ let session = JSON.parse(localStorage.getItem("labstore_session") || "null");
 let products = [];
 let path = [];
 let cart = {}; // catalogNumber -> qty
-let view = "loading"; // loading | login | browse | summary | admin
+let view = "loading"; // loading | home | login | browse | summary | admin
 let loadError = "";
 let searchQuery = "";
 let adminStats = null; // { monthly, byCustomer }
@@ -56,10 +56,10 @@ async function boot() {
     } catch (err) {
       session = null;
       localStorage.removeItem("labstore_session");
-      view = "login";
+      view = "home";
     }
   } else {
-    view = "login";
+    view = "home";
   }
   render();
 }
@@ -108,6 +108,7 @@ function cartTotal() {
 // ====== RENDER ======
 function render() {
   if (view === "loading") return renderLoading();
+  if (view === "home") return renderHome();
   if (view === "login") return renderLogin();
   if (view === "browse") return renderBrowse();
   if (view === "summary") return renderSummary();
@@ -116,6 +117,29 @@ function render() {
 
 function renderLoading() {
   root.innerHTML = `<div class="loading-state">Loading store…</div>`;
+}
+
+function renderHome() {
+  root.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-flask">${BRAND_MARK}</div>
+        <p class="login-title">Medvision Lab Store</p>
+        <p class="login-sub">What are you looking for?</p>
+      </div>
+      <div class="home-choices">
+        <div class="home-choice" id="goLab">
+          <p class="home-choice-title">Lab Products</p>
+          <p class="home-choice-sub">Sign in with your client account for your pricing</p>
+        </div>
+        <div class="home-choice" id="goSpecialty">
+          <p class="home-choice-title">Specialty Departments</p>
+          <p class="home-choice-sub">Browse — no account needed</p>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("goLab").onclick = () => { view = "login"; render(); };
+  document.getElementById("goSpecialty").onclick = enterGuestMode;
 }
 
 function renderLogin() {
@@ -131,8 +155,7 @@ function renderLogin() {
         <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
         <button class="btn-primary" id="loginBtn">Sign in</button>
         <p class="login-error" id="loginError"></p>
-        <div class="login-divider"><span>or</span></div>
-        <button class="btn-secondary" id="guestBtn">Continue as Guest</button>
+        <button class="btn-ghost" id="backHomeBtn" style="align-self:center;">← Back</button>
       </div>
     </div>`;
   if (loadError) {
@@ -141,13 +164,14 @@ function renderLogin() {
     err.style.display = "block";
   }
   document.getElementById("loginBtn").onclick = doLogin;
-  document.getElementById("guestBtn").onclick = enterGuestMode;
+  document.getElementById("backHomeBtn").onclick = () => { view = "home"; render(); };
   document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
 }
 
 async function enterGuestMode() {
-  const btn = document.getElementById("guestBtn");
-  btn.disabled = true; btn.textContent = "Loading…";
+  loadError = "";
+  view = "loading";
+  render();
   try {
     const res = await apiGet("products");
     if (!res.success) throw new Error(res.error || "Failed to load products");
@@ -156,12 +180,11 @@ async function enterGuestMode() {
     products = res.products.map(p => Object.assign({}, p, { EffectivePrice: Number(p.Price), HasCustomPrice: false }));
     session = { isGuest: true, clientName: "Guest", discount: 0, isAdmin: false };
     view = "browse";
-    render();
   } catch (err) {
-    btn.disabled = false; btn.textContent = "Continue as Guest";
     loadError = "Could not load the store. Please try again.";
-    render();
+    view = "home";
   }
+  render();
 }
 
 async function doLogin() {
@@ -192,9 +215,9 @@ async function doLogin() {
 }
 
 function logout() {
-  session = null; cart = {}; path = [];
+  session = null; cart = {}; path = []; searchQuery = "";
   localStorage.removeItem("labstore_session");
-  view = "login";
+  view = "home";
   render();
 }
 
