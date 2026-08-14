@@ -124,6 +124,15 @@
   .login-sub{color:var(--text-muted);font-size:14px;margin:0;}
   .login-form{display:flex;flex-direction:column;gap:10px;margin-top:22px;}
   .login-error{color:var(--danger);font-size:13px;text-align:center;margin:0;display:none;}
+  .login-divider{display:flex;align-items:center;gap:10px;margin:6px 0;color:var(--text-muted);font-size:12px;}
+  .login-divider::before,.login-divider::after{content:"";flex:1;height:1px;background:var(--glass-border);}
+  .guest-badge{color:var(--text-muted) !important;background:var(--glass-strong) !important;border:1px solid var(--glass-border) !important;}
+  .guest-form{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    padding:14px;margin-bottom:16px;display:flex;flex-direction:column;gap:8px;
+  }
+  .guest-form-title{font-size:13px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin:0 0 2px;}
 
   /* Breadcrumb */
   .crumbs{font-size:13px;color:var(--text-muted);margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;}

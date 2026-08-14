@@ -131,6 +131,8 @@ function renderLogin() {
         <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
         <button class="btn-primary" id="loginBtn">Sign in</button>
         <p class="login-error" id="loginError"></p>
+        <div class="login-divider"><span>or</span></div>
+        <button class="btn-secondary" id="guestBtn">Continue as Guest</button>
       </div>
     </div>`;
   if (loadError) {
@@ -139,7 +141,27 @@ function renderLogin() {
     err.style.display = "block";
   }
   document.getElementById("loginBtn").onclick = doLogin;
+  document.getElementById("guestBtn").onclick = enterGuestMode;
   document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+}
+
+async function enterGuestMode() {
+  const btn = document.getElementById("guestBtn");
+  btn.disabled = true; btn.textContent = "Loading…";
+  try {
+    const res = await apiGet("products");
+    if (!res.success) throw new Error(res.error || "Failed to load products");
+    // Guests see plain catalog prices — normalize EffectivePrice so all
+    // the shared rendering code (cards, cart, summary) works unchanged.
+    products = res.products.map(p => Object.assign({}, p, { EffectivePrice: Number(p.Price), HasCustomPrice: false }));
+    session = { isGuest: true, clientName: "Guest", discount: 0, isAdmin: false };
+    view = "browse";
+    render();
+  } catch (err) {
+    btn.disabled = false; btn.textContent = "Continue as Guest";
+    loadError = "Could not load the store. Please try again.";
+    render();
+  }
 }
 
 async function doLogin() {
@@ -190,7 +212,7 @@ function renderBrowse() {
     </div>
     <div class="client-strip">
       <span class="name">${session.clientName}</span>
-      <span class="discount">${session.discount}% off</span>
+      ${session.isGuest ? `<span class="discount guest-badge">Browsing as guest</span>` : `<span class="discount">${session.discount}% off</span>`}
     </div>
     <div class="search-row">
       <input id="searchInput" type="text" placeholder="Search products or catalog #..." value="${searchQuery.replace(/"/g, '&quot;')}" />
@@ -315,7 +337,19 @@ function renderSummary() {
       </tr>`;
     });
     html += `</tbody></table>
-    <div class="grand-total-row"><span class="label">Grand Total</span><span class="value">${grand.toFixed(2)} KWD</span></div>
+    <div class="grand-total-row"><span class="label">Grand Total</span><span class="value">${grand.toFixed(2)} KWD</span></div>`;
+
+    if (session.isGuest) {
+      html += `
+      <div class="guest-form">
+        <p class="guest-form-title">Your details</p>
+        <input id="guestName" type="text" placeholder="First name" />
+        <input id="guestPhone" type="tel" placeholder="Phone number" />
+        <input id="guestAddress" type="text" placeholder="Address (as detailed as possible)" />
+      </div>`;
+    }
+
+    html += `
     <div class="summary-actions">
       <button class="btn-secondary" id="editBtn">Edit order</button>
       <button class="btn-primary" id="submitBtn">Submit order</button>
@@ -334,14 +368,26 @@ function renderSummary() {
 async function submitOrder(lines) {
   const btn = document.getElementById("submitBtn");
   const status = document.getElementById("statusMsg");
+
+  let guestName, guestPhone, guestAddress;
+  if (session.isGuest) {
+    guestName = document.getElementById("guestName").value.trim();
+    guestPhone = document.getElementById("guestPhone").value.trim();
+    guestAddress = document.getElementById("guestAddress").value.trim();
+    if (!guestName || !guestPhone || !guestAddress) {
+      status.textContent = "Please fill in your name, phone number, and address.";
+      status.className = "status-msg error";
+      status.style.display = "block";
+      return;
+    }
+  }
+
   btn.disabled = true; btn.textContent = "Submitting…";
   try {
-    const res = await apiPost({
-      action: "submitOrder",
-      username: session.username,
-      password: session.password,
-      items: lines.map(l => ({ catalogNumber: l.CatalogNumber, qty: l.qty }))
-    });
+    const payload = session.isGuest
+      ? { action: "guestOrder", guestName, guestPhone, guestAddress, items: lines.map(l => ({ catalogNumber: l.CatalogNumber, qty: l.qty })) }
+      : { action: "submitOrder", username: session.username, password: session.password, items: lines.map(l => ({ catalogNumber: l.CatalogNumber, qty: l.qty })) };
+    const res = await apiPost(payload);
     if (!res.success) throw new Error(res.error || "Order failed");
     status.textContent = "✓ Order submitted — confirmation email sent.";
     status.className = "status-msg success";
