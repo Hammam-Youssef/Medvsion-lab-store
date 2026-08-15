@@ -8,7 +8,7 @@ const ICON_CART = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org
 
 // Tries to show logo.png (upload your own file with this name next to index.html).
 // Falls back to the flask icon automatically if logo.png isn't there yet.
-const BRAND_MARK = `<img src="logo.png" alt="Medvision" onerror="this.outerHTML='${ICON_FLASK.replace(/'/g, "\\'")}'" />`;
+const BRAND_MARK = `<img src="logo-v2.png" alt="Medvision" onerror="this.outerHTML='${ICON_FLASK.replace(/'/g, "\\'")}'" />`;
 
 // ====== STATE ======
 let session = JSON.parse(localStorage.getItem("labstore_session") || "null");
@@ -124,7 +124,7 @@ function renderHome() {
     <div class="login-wrap">
       <div class="login-card">
         <div class="login-flask">${BRAND_MARK}</div>
-        <p class="login-title">Medvision Lab Store</p>
+        <p class="login-title">Medvision Store</p>
         <p class="login-sub">What are you looking for?</p>
       </div>
       <div class="home-choices">
@@ -147,7 +147,7 @@ function renderLogin() {
     <div class="login-wrap">
       <div class="login-card">
         <div class="login-flask">${BRAND_MARK}</div>
-        <p class="login-title">Medvision Lab Store</p>
+        <p class="login-title">Medvision Store</p>
         <p class="login-sub">Sign in with your client account</p>
       </div>
       <div class="login-form">
@@ -228,7 +228,7 @@ function renderBrowse() {
   let html = `
     <div class="topbar">
       <div class="brand-mark">${BRAND_MARK}</div>
-      <p class="brand-name">Medvision Lab Store</p>
+      <p class="brand-name">Medvision Store</p>
       <div class="topbar-spacer"></div>
       ${session.isAdmin ? `<button class="btn-ghost" id="dashboardBtn">Dashboard</button>` : ''}
       <button class="btn-ghost" id="logoutBtn">Sign out</button>
