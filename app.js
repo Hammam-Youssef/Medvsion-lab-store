@@ -366,12 +366,33 @@ function renderSummary() {
     <div class="grand-total-row"><span class="label">Grand Total</span><span class="value">${grand.toFixed(2)} KWD</span></div>`;
 
     if (session.isGuest) {
+      // Labels in English, hints (placeholders) in Arabic so it's clear for
+      // guests either way. All fields are required — submitOrder() blocks
+      // submission until every one of them is filled in.
       html += `
       <div class="guest-form">
         <p class="guest-form-title">Your details</p>
-        <input id="guestName" type="text" placeholder="First name" />
-        <input id="guestPhone" type="tel" placeholder="Phone number" />
-        <input id="guestAddress" type="text" placeholder="Address (as detailed as possible)" />
+
+        <label class="guest-form-label" for="guestName">Full Name</label>
+        <input id="guestName" type="text" placeholder="الاسم بالكامل" required />
+
+        <label class="guest-form-label" for="guestPhone">Phone Number</label>
+        <input id="guestPhone" type="tel" placeholder="رقم الهاتف" required />
+
+        <label class="guest-form-label" for="guestCity">City</label>
+        <input id="guestCity" type="text" placeholder="المدينة" required />
+
+        <label class="guest-form-label" for="guestArea">Area</label>
+        <input id="guestArea" type="text" placeholder="المنطقة" required />
+
+        <label class="guest-form-label" for="guestBlock">Block</label>
+        <input id="guestBlock" type="text" placeholder="القطعة" required />
+
+        <label class="guest-form-label" for="guestStreet">Street</label>
+        <input id="guestStreet" type="text" placeholder="الشارع" required />
+
+        <label class="guest-form-label" for="guestBuilding">Building Number</label>
+        <input id="guestBuilding" type="text" placeholder="رقم المبنى" required />
       </div>`;
     }
 
@@ -391,27 +412,50 @@ function renderSummary() {
   if (submitBtn) submitBtn.onclick = () => submitOrder(lines);
 }
 
+// Fields required for a guest order, with a friendly label used in the
+// validation message if one is left empty.
+const GUEST_REQUIRED_FIELDS = [
+  { id: "guestName", label: "Full Name" },
+  { id: "guestPhone", label: "Phone Number" },
+  { id: "guestCity", label: "City" },
+  { id: "guestArea", label: "Area" },
+  { id: "guestBlock", label: "Block" },
+  { id: "guestStreet", label: "Street" },
+  { id: "guestBuilding", label: "Building Number" }
+];
+
 async function submitOrder(lines) {
   const btn = document.getElementById("submitBtn");
   const status = document.getElementById("statusMsg");
 
-  let guestName, guestPhone, guestAddress;
+  let guestName, guestPhone, city, area, block, street, buildingNumber;
   if (session.isGuest) {
-    guestName = document.getElementById("guestName").value.trim();
-    guestPhone = document.getElementById("guestPhone").value.trim();
-    guestAddress = document.getElementById("guestAddress").value.trim();
-    if (!guestName || !guestPhone || !guestAddress) {
-      status.textContent = "Please fill in your name, phone number, and address.";
+    const values = {};
+    const missing = [];
+    GUEST_REQUIRED_FIELDS.forEach(f => {
+      const val = document.getElementById(f.id).value.trim();
+      values[f.id] = val;
+      if (!val) missing.push(f.label);
+    });
+    if (missing.length) {
+      status.textContent = "Please fill in: " + missing.join(", ") + ".";
       status.className = "status-msg error";
       status.style.display = "block";
-      return;
+      return; // blocks submit until every field above is filled in
     }
+    guestName = values.guestName;
+    guestPhone = values.guestPhone;
+    city = values.guestCity;
+    area = values.guestArea;
+    block = values.guestBlock;
+    street = values.guestStreet;
+    buildingNumber = values.guestBuilding;
   }
 
   btn.disabled = true; btn.textContent = "Submitting…";
   try {
     const payload = session.isGuest
-      ? { action: "guestOrder", guestName, guestPhone, guestAddress, items: lines.map(l => ({ catalogNumber: l.CatalogNumber, qty: l.qty })) }
+      ? { action: "guestOrder", guestName, guestPhone, city, area, block, street, buildingNumber, items: lines.map(l => ({ catalogNumber: l.CatalogNumber, qty: l.qty })) }
       : { action: "submitOrder", username: session.username, password: session.password, items: lines.map(l => ({ catalogNumber: l.CatalogNumber, qty: l.qty })) };
     const res = await apiPost(payload);
     if (!res.success) throw new Error(res.error || "Order failed");

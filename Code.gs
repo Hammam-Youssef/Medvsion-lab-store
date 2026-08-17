@@ -3,17 +3,29 @@
  *
  * SHEET STRUCTURE EXPECTED:
  *
- * Tab "Products": Department | Brand | Category | ProductName | CatalogNumber | Price | ImageURL
+ * Tab "Products": Department | Brand | Category | ProductName | CatalogNumber | Price | ImageURL | Audience | Stock
  *   - Category can be left blank (product sits directly under the Brand)
  *   - Brand can be left blank if a Department has no brand level
+ *   - Audience: set to "Public" for products guests (Specialty Departments) can see/order
+ *   - Stock: optional. Leave blank if you don't track stock for a product.
  *
- * Tab "Users": Username | Password | ClientName | DiscountPercent
+ * Tab "Users": Username | Password | ClientName | DiscountPercent | Role
  *
  * Tab "CustomPricing" (optional, create it if you need special pricing):
  *   Username | CatalogNumber | Price
  *   For a given user + product combo listed here, this exact Price is used
  *   instead of the normal Price × discount calculation. Any product not
  *   listed for that user just falls back to their normal DiscountPercent.
+ *
+ * Tab "DepartmentEmails" (optional — create it to route Guest/Specialty
+ * orders to the right purchasing contact automatically):
+ *   Department | Email
+ *   When a guest order contains items from a given Department, that part
+ *   of the order is emailed to the address listed here instead of the
+ *   default EMAIL_TO. If a Department has no row here, it falls back to
+ *   EMAIL_TO. To add a new department, just add one row — no code changes.
+ *   NOTE: this only affects Guest/"Specialty Departments" orders. Lab
+ *   (logged-in) orders always go to EMAIL_TO, unchanged.
  *
  * Tab "Orders" (created automatically if missing): log of every submitted order line
  *
@@ -31,9 +43,11 @@ const PRODUCTS_SHEET = "Products";
 const USERS_SHEET = "Users";
 const ORDERS_SHEET = "Orders";
 const CUSTOM_PRICING_SHEET = "CustomPricing";
+const DEPARTMENT_EMAILS_SHEET = "DepartmentEmails";
 
-// Only this address receives order emails for now.
-// Add more addresses to EMAIL_CC once you've confirmed test orders look right.
+// Default/fallback address for order emails — used for Lab orders always,
+// and for Guest/Specialty orders whose Department isn't listed in
+// DepartmentEmails.
 const EMAIL_TO = "h.yousef@medvision-kw.com";
 const EMAIL_CC = []; // e.g. ["someone@medvision-kw.com"]
 
@@ -136,6 +150,28 @@ function getCustomPricingMap() {
 }
 
 /**
+ * Reads the optional DepartmentEmails sheet into a lookup map keyed by
+ * Department name. Returns {} if the sheet doesn't exist yet — routing
+ * is entirely opt-in and falls back to EMAIL_TO per department.
+ */
+function getDepartmentEmailMap() {
+  const sheet = getSheet(DEPARTMENT_EMAILS_SHEET);
+  const map = {};
+  if (!sheet) return map;
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return map;
+  const headers = data[0].map(h => String(h).trim());
+  const dIdx = headers.indexOf("Department");
+  const eIdx = headers.indexOf("Email");
+  if (dIdx === -1 || eIdx === -1) return map;
+  data.slice(1).forEach(row => {
+    if (!row[dIdx] || !row[eIdx]) return;
+    map[String(row[dIdx]).trim()] = String(row[eIdx]).trim();
+  });
+  return map;
+}
+
+/**
  * For a given username, returns the full product list with an
  * EffectivePrice on each item: their CustomPricing override if one
  * exists for that product, otherwise Price × (1 − their discount).
@@ -211,6 +247,7 @@ function handleSubmitOrder(body) {
     const lineTotal = unitPrice * item.qty;
     grandTotal += lineTotal;
     lines.push({
+      department: p.Department || "Unassigned",
       productName: p.ProductName,
       catalogNumber: p.CatalogNumber,
       qty: item.qty,
@@ -236,7 +273,7 @@ function handleSubmitOrder(body) {
   }
 
   logOrder(login.clientName, body.username, lines, grandTotal);
-  sendOrderEmail(login.clientName, lines, grandTotal);
+  sendLabOrderEmail(login.clientName, lines, grandTotal);
 
   return { success: true, grandTotal: grandTotal };
 }
@@ -264,18 +301,30 @@ function getProductsIndexed() {
 }
 
 /**
- * Guest checkout: no username/password. Requires a name, phone, and
- * detailed address instead — all three must be filled in or the order
- * is rejected. Prices are the plain catalog Price (no discount, since
- * there's no client account to look up a discount for).
+ * Guest checkout ("Specialty Departments"): no username/password.
+ * Requires name, phone, and a full broken-out address (city, area, block,
+ * street, building number) — all fields must be filled in or the order is
+ * rejected. Prices are the plain catalog Price (no discount, since there's
+ * no client account to look up a discount for).
+ *
+ * The order is split by each product's Department and one email is sent
+ * per department to whoever is listed for it in DepartmentEmails (falling
+ * back to EMAIL_TO if that department isn't listed there yet).
+ *
+ * body = { guestName, guestPhone, city, area, block, street, buildingNumber,
+ *          items: [{ catalogNumber, qty }] }
  */
 function handleGuestOrder(body) {
   const name = String(body.guestName || "").trim();
   const phone = String(body.guestPhone || "").trim();
-  const address = String(body.guestAddress || "").trim();
+  const city = String(body.city || "").trim();
+  const area = String(body.area || "").trim();
+  const block = String(body.block || "").trim();
+  const street = String(body.street || "").trim();
+  const buildingNumber = String(body.buildingNumber || "").trim();
 
-  if (!name || !phone || !address) {
-    return { success: false, error: "Please fill in your name, phone number, and address." };
+  if (!name || !phone || !city || !area || !block || !street || !buildingNumber) {
+    return { success: false, error: "Please fill in all required fields." };
   }
 
   const { sheet: productsSheet, headers, map } = getProductsIndexed();
@@ -301,6 +350,7 @@ function handleGuestOrder(body) {
     const lineTotal = unitPrice * item.qty;
     grandTotal += lineTotal;
     lines.push({
+      department: p.Department || "Unassigned",
       productName: p.ProductName,
       catalogNumber: p.CatalogNumber,
       qty: item.qty,
@@ -325,29 +375,51 @@ function handleGuestOrder(body) {
     });
   }
 
-  logOrder(name, "GUEST", lines, grandTotal, phone, address);
-  sendOrderEmail(name, lines, grandTotal, phone, address);
+  const guestInfo = { phone, city, area, block, street, buildingNumber };
+
+  logOrder(name, "GUEST", lines, grandTotal, guestInfo);
+
+  // Split the order by Department and email each department's contact
+  // separately, so an order mixing e.g. Radiology + Dental supplies
+  // reaches both purchasing owners automatically.
+  const emailMap = getDepartmentEmailMap();
+  const byDept = {};
+  lines.forEach(l => {
+    if (!byDept[l.department]) byDept[l.department] = [];
+    byDept[l.department].push(l);
+  });
+  Object.keys(byDept).forEach(dept => {
+    const deptLines = byDept[dept];
+    const subtotal = deptLines.reduce((s, l) => s + l.lineTotal, 0);
+    const toEmail = emailMap[dept] || EMAIL_TO;
+    sendGuestDepartmentEmail(dept, toEmail, name, guestInfo, deptLines, subtotal);
+  });
 
   return { success: true, grandTotal: grandTotal };
 }
 
-function logOrder(clientName, username, lines, grandTotal, guestPhone, guestAddress) {
+/**
+ * Appends one row per order line to the Orders sheet.
+ * guestInfo is omitted (undefined) for Lab orders.
+ */
+function logOrder(clientName, username, lines, grandTotal, guestInfo) {
   let sheet = getSheet(ORDERS_SHEET);
   if (!sheet) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(ORDERS_SHEET);
     sheet.appendRow([
-      "Timestamp", "Username", "ClientName", "ProductName",
+      "Timestamp", "Username", "ClientName", "Department", "ProductName",
       "CatalogNumber", "Qty", "UnitPrice", "LineTotal", "OrderTotal",
-      "Phone", "Address"
+      "Phone", "City", "Area", "Block", "Street", "BuildingNumber"
     ]);
   }
   const timestamp = new Date();
+  const g = guestInfo || {};
   lines.forEach(l => {
     sheet.appendRow([
-      timestamp, username, clientName, l.productName,
+      timestamp, username, clientName, l.department || "", l.productName,
       l.catalogNumber, l.qty, l.unitPrice.toFixed(2),
       l.lineTotal.toFixed(2), grandTotal.toFixed(2),
-      guestPhone || "", guestAddress || ""
+      g.phone || "", g.city || "", g.area || "", g.block || "", g.street || "", g.buildingNumber || ""
     ]);
   });
 }
@@ -397,7 +469,11 @@ function handleAdminStats(username, password) {
   return { success: true, monthly: monthly, byCustomer: byCustomer };
 }
 
-function sendOrderEmail(clientName, lines, grandTotal, guestPhone, guestAddress) {
+/**
+ * Lab (logged-in) order confirmation — always goes to EMAIL_TO / EMAIL_CC,
+ * unaffected by DepartmentEmails.
+ */
+function sendLabOrderEmail(clientName, lines, grandTotal) {
   const rowsHtml = lines.map(l => `
     <tr>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;">${l.productName}</td>
@@ -407,16 +483,10 @@ function sendOrderEmail(clientName, lines, grandTotal, guestPhone, guestAddress)
       <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;text-align:right;">${l.lineTotal.toFixed(2)} KWD</td>
     </tr>`).join("");
 
-  const contactHtml = (guestPhone || guestAddress) ? `
-      <p style="color:#333;margin:4px 0;"><strong>Phone:</strong> ${guestPhone || "—"}</p>
-      <p style="color:#333;margin:4px 0 14px;"><strong>Address:</strong> ${guestAddress || "—"}</p>
-  ` : "";
-
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:640px;">
       <h2 style="margin-bottom:2px;">New Order — ${clientName}</h2>
       <p style="color:#666;margin-top:0;">Submitted ${new Date().toLocaleString()}</p>
-      ${contactHtml}
       <table style="border-collapse:collapse;width:100%;font-size:14px;">
         <thead>
           <tr style="background:#f2f2f2;text-align:left;">
@@ -432,7 +502,7 @@ function sendOrderEmail(clientName, lines, grandTotal, guestPhone, guestAddress)
       <p style="font-size:16px;margin-top:14px;"><strong>Grand Total: ${grandTotal.toFixed(2)} KWD</strong></p>
     </div>`;
 
-  const options = { htmlBody: html };
+  const options = {};
   if (EMAIL_CC.length) options.cc = EMAIL_CC.join(",");
 
   MailApp.sendEmail({
@@ -440,5 +510,52 @@ function sendOrderEmail(clientName, lines, grandTotal, guestPhone, guestAddress)
     subject: `New LabStore Order — ${clientName}`,
     htmlBody: html,
     cc: options.cc
+  });
+}
+
+/**
+ * Guest/Specialty department order confirmation — one call per Department
+ * present in the order, sent to that department's mapped email (or
+ * EMAIL_TO as a fallback if the department isn't in DepartmentEmails yet).
+ */
+function sendGuestDepartmentEmail(department, toEmail, guestName, guestInfo, lines, subtotal) {
+  const rowsHtml = lines.map(l => `
+    <tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;">${l.productName}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;">${l.catalogNumber}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;text-align:center;">${l.qty}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;text-align:right;">${l.unitPrice.toFixed(2)} KWD</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e2e2;text-align:right;">${l.lineTotal.toFixed(2)} KWD</td>
+    </tr>`).join("");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:640px;">
+      <h2 style="margin-bottom:2px;">New ${department} Order — ${guestName}</h2>
+      <p style="color:#666;margin-top:0;">Submitted ${new Date().toLocaleString()}</p>
+      <p style="color:#333;margin:4px 0;"><strong>Phone:</strong> ${guestInfo.phone || "—"}</p>
+      <p style="color:#333;margin:4px 0 14px;">
+        <strong>Address:</strong>
+        City: ${guestInfo.city || "—"} · Area: ${guestInfo.area || "—"} · Block: ${guestInfo.block || "—"} ·
+        Street: ${guestInfo.street || "—"} · Building No.: ${guestInfo.buildingNumber || "—"}
+      </p>
+      <table style="border-collapse:collapse;width:100%;font-size:14px;">
+        <thead>
+          <tr style="background:#f2f2f2;text-align:left;">
+            <th style="padding:6px 10px;">Product</th>
+            <th style="padding:6px 10px;">Catalog #</th>
+            <th style="padding:6px 10px;text-align:center;">Qty</th>
+            <th style="padding:6px 10px;text-align:right;">Unit Price</th>
+            <th style="padding:6px 10px;text-align:right;">Line Total</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      <p style="font-size:16px;margin-top:14px;"><strong>Total: ${subtotal.toFixed(2)} KWD</strong></p>
+    </div>`;
+
+  MailApp.sendEmail({
+    to: toEmail,
+    subject: `New ${department} Order — ${guestName}`,
+    htmlBody: html
   });
 }
